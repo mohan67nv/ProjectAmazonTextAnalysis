@@ -23,4 +23,4 @@ def getDF(path):
 start_time = time.time()
 df = getDF('D:/amazon_data/reviews_Electronics_5.json.gz')
 
-print("Time used:", time.time()-start_time)
+print("Time :", time.time()-start_time)

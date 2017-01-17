@@ -1,6 +1,7 @@
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
+import time
 
 from mikkel import data_parser
 
@@ -12,7 +13,7 @@ class AmazonClassifier:
         self.display_step = display_step
         self.examples_to_show = 10
 
-        self.one_hot_template = data_parser.load_bag_of_words()
+        self.one_hot_template = data_parser.load_bag_of_words(no_stopwords=False)
 
         self.graph = tf.Graph()
 
@@ -41,16 +42,16 @@ class AmazonClassifier:
     def predict(self, reviews):
         all_results = []
         for review in reviews:
-            words = data_parser.get_meaningful_words(review)
-            one_hots = self.get_one_hot_from_words(words)
-            results = self.sess.run(self.y_pred, feed_dict={self.X: one_hots, self.keep_prob: 1.0})
-            print(results)
-            print(np.mean(np.argmax(results, axis=1)))
-            print(np.std(np.argmax(results, axis=1)))
-            all_results.append(int(np.mean(np.argmax(results, axis=1)) + 1))
+            if len(review) > 0:
+                words = data_parser.get_meaningful_words(review)
+                one_hots = self.get_one_hot_from_words(words)
+                results = self.sess.run(self.y_pred, feed_dict={self.X: one_hots, self.keep_prob: 1.0})
+                all_results.append(round(np.mean(np.argmax(results, axis=1)) + 1))
+            else:
+                all_results.append(5.)
         return all_results
 
-    def restore_model(self, restore_path='ann_model.ckpt'):
+    def restore_model(self, restore_path='./tf_model.ckpt'):
         self.build_model()
         self.saver.restore(self.sess, restore_path)
         print("Model restored from file: %s" % restore_path)
@@ -125,15 +126,20 @@ class AmazonClassifier:
             review = X_data[idx][0]
             label = Y_data[idx][0] - 1  # 0-4, not 1-5 stars
             words = data_parser.get_meaningful_words(review)
+            one_hot_label = np.zeros(self.n_output)
+            one_hot_label[int(label)] = 1.
             for word in words:
                 one_hot = np.zeros(self.n_input)
                 if word in self.one_hot_template:
-                    one_hot[self.one_hot_template.index(word)] = 1.
+                    idx = self.one_hot_template.index(word)
+                    # if idx != 0:
+                    #     one_hot[idx - 1] = 0.5
+                    # if idx < self.n_output - 1:
+                    #     one_hot[idx + 1] = 0.5
+                    one_hot[idx] = 1.
                 else:
                     one_hot[-1] = 1.
                 X_words.append(one_hot)
-                one_hot_label = np.zeros(self.n_output)
-                one_hot_label[int(label)] = 1.
                 Y_labels.append(one_hot_label)
         # TODO maybe return random indexes instead of the first ones
         return np.array(X_words[:batch_size]), np.array(Y_labels[:batch_size])
@@ -149,11 +155,8 @@ class AmazonClassifier:
             X_words.append(one_hot)
         return np.array(X_words)
 
-    def train(self, training_epochs=20, iterations_per_epoch=500, learning_rate=0.001, batch_size=128, show_cost=True,
-              show_test_acc=True, save=False, save_path='done_model/tf_done_model.ckpt', logger=True):
+    def load_data(self):
         # Load and preprocess data
-        if logger:
-            print("Preprocessing data...")
         x_data, y_data = data_parser.load_training_data()
 
         # Split into training and testing data
@@ -161,6 +164,13 @@ class AmazonClassifier:
         self.Y_train = y_data[:1200000]
         self.X_test = x_data[1200000:]
         self.Y_test = y_data[1200000:]
+
+    def train(self, training_epochs=20, iterations_per_epoch=500, learning_rate=0.001, batch_size=128, show_cost=True,
+              show_test_acc=True, save=False, save_path='done_model/tf_done_model.ckpt', logger=True):
+        if self.X_train is None:
+            if logger:
+                print("Preprocessing data...")
+            self.load_data()
 
         self.build_model(learning_rate=learning_rate)
         if logger:
@@ -222,10 +232,21 @@ class AmazonClassifier:
 
 
 if __name__ == '__main__':
+    save_path = './model_saves/tf_model.ckpt'
     clazzifier = AmazonClassifier()
-    clazzifier.train(training_epochs=1, iterations_per_epoch=1000, learning_rate=0.001, batch_size=1024,
-                     show_cost=False, show_test_acc=False, save=True, save_path='./tf_model.ckpt', logger=True)
-
+    # clazzifier.train(training_epochs=1, iterations_per_epoch=1500, learning_rate=0.001, batch_size=64,
+    #                  show_cost=False, show_test_acc=False, save=True, save_path=save_path, logger=True)
+    clazzifier.restore_model(restore_path=save_path)
+    clazzifier.load_data()
+    start_time = time.time()
     print("Testing")
-    print(clazzifier.Y_test[:clazzifier.examples_to_show])
-    clazzifier.predict([clazzifier.X_test[:clazzifier.examples_to_show]])
+    test_n_samples = 2000
+    print(clazzifier.Y_test[:10])
+    print(clazzifier.predict(clazzifier.X_test[:10]))
+    res_true = np.array([clazzifier.Y_test[:test_n_samples]])
+    res_pred = np.zeros(test_n_samples)
+    res_pred.fill(5.)
+    # res_pred = np.array(clazzifier.predict(clazzifier.X_test[:test_n_samples]))
+    acc = np.sum(res_true == res_pred) / test_n_samples
+    print("Acc:", acc)
+    print("Prediction time used:", time.time() - start_time)

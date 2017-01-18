@@ -5,6 +5,19 @@ import time
 
 from mikkel import data_parser
 
+"""
+TODO:
+- Try normalizing the biased data
+- Try uncertain value (distribution over the different stars)
+- Try longer training time
+- Try other network configurations
+-
+
+If nothing works (new ideas):
+- Try LSTMs
+- Try regression instead of classification
+"""
+
 
 class AmazonClassifier:
     def __init__(self, history_sampling_rate=1, w_init_limit=(-0.5, 0.5), display_step=1):
@@ -38,6 +51,8 @@ class AmazonClassifier:
 
         self.cost_history = []
         self.test_acc_history = []
+
+        self.star_counter = np.zeros(5)
 
     def predict(self, reviews):
         all_results = []
@@ -91,8 +106,9 @@ class AmazonClassifier:
 
             delta = 0.0001
             self.loss_function = tf.reduce_mean(
-                tf.nn.softmax_cross_entropy_with_logits(self.y_pred, y_true) + delta * tf.nn.l2_loss(
-                    weights['h1']) + delta * tf.nn.l2_loss(weights['h2']) + delta * tf.nn.l2_loss(weights['out']))
+                tf.nn.softmax_cross_entropy_with_logits(self.y_pred, y_true))
+            # + delta * tf.nn.l2_loss(
+            #         weights['h1']) + delta * tf.nn.l2_loss(weights['h2']) + delta * tf.nn.l2_loss(weights['out']))
             self.optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(self.loss_function)
 
             # Define loss, minimize the squared error (with or without scaling)
@@ -109,7 +125,7 @@ class AmazonClassifier:
             self.saver = tf.train.Saver()
 
             # Initializing the variables
-            self.init = tf.initialize_all_variables()
+            self.init = tf.global_variables_initializer()
 
             # Launch the graph
             # config = tf.ConfigProto()
@@ -121,26 +137,30 @@ class AmazonClassifier:
         idexes = np.arange(len(X_data))
         X_words = []
         Y_labels = []
+
+        selected_label = np.argmin(self.star_counter)
         while len(X_words) < batch_size:
             idx = np.random.choice(idexes, 1, replace=True)
-            review = X_data[idx][0]
             label = Y_data[idx][0] - 1  # 0-4, not 1-5 stars
+            while label != selected_label:
+                idx = np.random.choice(idexes, 1, replace=True)
+                label = Y_data[idx][0] - 1  # 0-4, not 1-5 stars
+            self.star_counter[selected_label] += 1
+            review = X_data[idx][0]
             words = data_parser.get_meaningful_words(review)
             one_hot_label = np.zeros(self.n_output)
             one_hot_label[int(label)] = 1.
+            one_hot = np.zeros(self.n_input)
             for word in words:
-                one_hot = np.zeros(self.n_input)
                 if word in self.one_hot_template:
                     idx = self.one_hot_template.index(word)
-                    # if idx != 0:
-                    #     one_hot[idx - 1] = 0.5
                     # if idx < self.n_output - 1:
                     #     one_hot[idx + 1] = 0.5
                     one_hot[idx] = 1.
                 else:
                     one_hot[-1] = 1.
-                X_words.append(one_hot)
-                Y_labels.append(one_hot_label)
+            X_words.append(one_hot)
+            Y_labels.append(one_hot_label)
         # TODO maybe return random indexes instead of the first ones
         return np.array(X_words[:batch_size]), np.array(Y_labels[:batch_size])
 
@@ -232,21 +252,23 @@ class AmazonClassifier:
 
 
 if __name__ == '__main__':
+    super_start_time = time.time()
     save_path = './model_saves/tf_model.ckpt'
     clazzifier = AmazonClassifier()
-    # clazzifier.train(training_epochs=1, iterations_per_epoch=1500, learning_rate=0.001, batch_size=64,
-    #                  show_cost=False, show_test_acc=False, save=True, save_path=save_path, logger=True)
-    clazzifier.restore_model(restore_path=save_path)
-    clazzifier.load_data()
+    clazzifier.train(training_epochs=10, iterations_per_epoch=1200, learning_rate=0.0001, batch_size=10,
+                     show_cost=False, show_test_acc=False, save=True, save_path=save_path, logger=True)
+    # clazzifier.restore_model(restore_path=save_path)
+    # clazzifier.load_data()
     start_time = time.time()
     print("Testing")
-    test_n_samples = 2000
+    test_n_samples = 3000
     print(clazzifier.Y_test[:10])
     print(clazzifier.predict(clazzifier.X_test[:10]))
     res_true = np.array([clazzifier.Y_test[:test_n_samples]])
-    res_pred = np.zeros(test_n_samples)
-    res_pred.fill(5.)
-    # res_pred = np.array(clazzifier.predict(clazzifier.X_test[:test_n_samples]))
+    # res_pred = np.zeros(test_n_samples)
+    # res_pred.fill(5.)
+    res_pred = np.array(clazzifier.predict(clazzifier.X_test[:test_n_samples]))
     acc = np.sum(res_true == res_pred) / test_n_samples
     print("Acc:", acc)
     print("Prediction time used:", time.time() - start_time)
+    print("All time used:", time.time() - super_start_time)

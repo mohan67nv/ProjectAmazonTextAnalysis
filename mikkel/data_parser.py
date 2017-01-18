@@ -61,6 +61,7 @@ def generate_bag_of_words(reviews, n_top_words=50000, no_stopwords=True, save=Fa
         meaningful_words = get_meaningful_words(review, no_stopwords=no_stopwords)
         without_stp.update(w for w in meaningful_words)
 
+    print("Total number of unique words:", len(without_stp))
     print("Generating top bag of words...")
     top_words = [y[0] for y in without_stp.most_common(n_top_words)]
     top_words.sort()
@@ -108,6 +109,6 @@ if __name__ == '__main__':
     training_data = pickle.load(open("training_data.pickle", "rb"))
     # training_labels = pickle.load(open("training_labels.pickle", "rb"))
 
-    bag_of_words = generate_bag_of_words(training_data, no_stopwords=False, save=True)
+    bag_of_words = generate_bag_of_words(training_data, no_stopwords=False, save=False)
 
     print("Time :", time.time() - start_time)

@@ -157,8 +157,6 @@ class AmazonClassifier:
                     # if idx < self.n_output - 1:
                     #     one_hot[idx + 1] = 0.5
                     one_hot[idx] = 1.
-                else:
-                    one_hot[-1] = 1.
             X_words.append(one_hot)
             Y_labels.append(one_hot_label)
         # TODO maybe return random indexes instead of the first ones
@@ -170,8 +168,6 @@ class AmazonClassifier:
             one_hot = np.zeros(self.n_input)
             if word in self.one_hot_template:
                 one_hot[self.one_hot_template.index(word)] = 1.
-            else:
-                one_hot[-1] = 1.
             X_words.append(one_hot)
         return np.array(X_words)
 
@@ -222,6 +218,8 @@ class AmazonClassifier:
                                                                      self.keep_prob: 1.0})
                 print("Epoch:", '%04d' % (epoch + 1), "cost=", "{:.9f}".format(c), "test acc=",
                       "{:.9f}".format(test_error))
+                if save:
+                    self.saver.save(self.sess, save_path)
 
         batch_xs, batch_ys = self.generate_batch(10000, self.X_test, self.Y_test)
         final_acc = self.sess.run(self.accuracy,
@@ -255,10 +253,10 @@ if __name__ == '__main__':
     super_start_time = time.time()
     save_path = './model_saves/tf_model.ckpt'
     clazzifier = AmazonClassifier()
-    clazzifier.train(training_epochs=10, iterations_per_epoch=1200, learning_rate=0.0001, batch_size=10,
-                     show_cost=False, show_test_acc=False, save=True, save_path=save_path, logger=True)
-    # clazzifier.restore_model(restore_path=save_path)
-    # clazzifier.load_data()
+    # clazzifier.train(training_epochs=5, iterations_per_epoch=1000, learning_rate=0.0001, batch_size=10,
+    #                  show_cost=False, show_test_acc=False, save=True, save_path=save_path, logger=True)
+    clazzifier.restore_model(restore_path=save_path)
+    clazzifier.load_data()
     start_time = time.time()
     print("Testing")
     test_n_samples = 3000

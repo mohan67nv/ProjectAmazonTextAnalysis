@@ -2,8 +2,9 @@ import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 import time
-
+import pickle
 from mikkel import data_parser
+
 
 """
 TODO:
@@ -46,8 +47,8 @@ class AmazonClassifier:
         # Network Parameters
         self.n_input = len(self.one_hot_template) + 1  # One-hot of most frequent words + 1 (unknown word)
         self.n_output = 5  # 5 stars to classify
-        self.n_hidden_1 = 100  # 1st layer num features
-        self.n_hidden_2 = 100  # 2nd layer num features
+        self.n_hidden_1 = 500  # 1st layer num features
+        self.n_hidden_2 = 500  # 2nd layer num features
 
         self.cost_history = []
         self.test_acc_history = []
@@ -60,7 +61,7 @@ class AmazonClassifier:
             if len(review) > 0:
                 words = data_parser.get_meaningful_words(review)
                 one_hots = self.get_one_hot_from_words(words)
-                results = self.sess.run(self.y_pred, feed_dict={self.X: one_hots, self.keep_prob: 1.0})
+                results = self.sess.run(self.y_pred, feed_dict={self.X: [one_hots], self.keep_prob: 1.0})
                 all_results.append(round(np.mean(np.argmax(results, axis=1)) + 1))
             else:
                 all_results.append(5.)
@@ -97,7 +98,9 @@ class AmazonClassifier:
             layer_1 = tf.nn.dropout(layer_1, self.keep_prob)  # Dropout layer
             layer_2 = tf.nn.tanh(tf.add(tf.matmul(layer_1, weights['h2']), biases['b2']))
             layer_2 = tf.nn.dropout(layer_2, self.keep_prob)  # Dropout layer
-            out = tf.matmul(layer_2, weights['out']) + biases['bout']
+            # out = tf.matmul(layer_2, weights['out']) + biases['bout']
+            out = tf.add(tf.matmul(layer_2, weights['out']), biases['bout'])
+            # sfm = tf.nn.softmax(tf.nn.tanh(out))
 
             # Prediction
             self.y_pred = out
@@ -105,8 +108,7 @@ class AmazonClassifier:
             y_true = self.Y
 
             delta = 0.0001
-            self.loss_function = tf.reduce_mean(
-                tf.nn.softmax_cross_entropy_with_logits(self.y_pred, y_true))
+            self.loss_function = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(self.y_pred, y_true))
             # + delta * tf.nn.l2_loss(
             #         weights['h1']) + delta * tf.nn.l2_loss(weights['h2']) + delta * tf.nn.l2_loss(weights['out']))
             self.optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(self.loss_function)
@@ -133,43 +135,60 @@ class AmazonClassifier:
             self.sess = tf.Session(graph=self.graph)
             self.sess.run(self.init)
 
+    def generate_pickle_representation(self, X_data, Y_data):
+        X_one_hots = []
+        Y_one_hots = []
+        for idx in range(0, 10000):
+            if (idx+1) % 1000 == 0:
+                print(idx)
+            label = Y_data[idx] - 1.  # 0-4, not 1-5 stars
+            # while label != selected_label:
+            #     idx = np.random.choice(idexes, 1, replace=True)
+            #     label = Y_data[idx][0] - 1  # 0-4, not 1-5 stars
+            # self.star_counter[selected_label] += 1
+            review = X_data[idx]
+            words = data_parser.get_meaningful_words(review)
+            one_hot_label = np.zeros(self.n_output)
+            one_hot_label[int(label)] = 1.
+            X_one_hots.append(self.get_one_hot_from_words(words))
+            Y_one_hots.append(one_hot_label)
+        pickle.dump(np.array(X_one_hots), open("./training_data_one_hots.pickle", "wb"))
+        pickle.dump(np.array(Y_one_hots), open("./training_labels_one_hots.pickle", "wb"))
+
+
     def generate_batch(self, batch_size, X_data, Y_data):
         idexes = np.arange(len(X_data))
         X_words = []
         Y_labels = []
-
-        selected_label = np.argmin(self.star_counter)
-        while len(X_words) < batch_size:
-            idx = np.random.choice(idexes, 1, replace=True)
-            label = Y_data[idx][0] - 1  # 0-4, not 1-5 stars
-            while label != selected_label:
-                idx = np.random.choice(idexes, 1, replace=True)
-                label = Y_data[idx][0] - 1  # 0-4, not 1-5 stars
-            self.star_counter[selected_label] += 1
-            review = X_data[idx][0]
+        chosen_indexes = np.random.choice(idexes, batch_size)
+        # selected_label = np.argmin(self.star_counter)
+        for idx in np.nditer(chosen_indexes):
+            label = Y_data[idx] - 1.  # 0-4, not 1-5 stars
+            # while label != selected_label:
+            #     idx = np.random.choice(idexes, 1, replace=True)
+            #     label = Y_data[idx][0] - 1  # 0-4, not 1-5 stars
+            # self.star_counter[selected_label] += 1
+            review = X_data[idx]
             words = data_parser.get_meaningful_words(review)
             one_hot_label = np.zeros(self.n_output)
             one_hot_label[int(label)] = 1.
-            one_hot = np.zeros(self.n_input)
-            for word in words:
-                if word in self.one_hot_template:
-                    idx = self.one_hot_template.index(word)
-                    # if idx < self.n_output - 1:
-                    #     one_hot[idx + 1] = 0.5
-                    one_hot[idx] = 1.
-            X_words.append(one_hot)
+            X_words.append(self.get_one_hot_from_words(words))
             Y_labels.append(one_hot_label)
-        # TODO maybe return random indexes instead of the first ones
-        return np.array(X_words[:batch_size]), np.array(Y_labels[:batch_size])
+        return np.array(X_words), np.array(Y_labels)
 
     def get_one_hot_from_words(self, words):
-        X_words = []
+        # prev_idx = None
+        one_hot = np.zeros(self.n_input)
         for word in words:
-            one_hot = np.zeros(self.n_input)
             if word in self.one_hot_template:
-                one_hot[self.one_hot_template.index(word)] = 1.
-            X_words.append(one_hot)
-        return np.array(X_words)
+                idx = self.one_hot_template.index(word)
+                # if prev_idx is not None:
+                #     one_hot[prev_idx] = 1.
+                one_hot[idx] = 1.
+                # prev_idx = idx
+            # else:
+            #     one_hot[-1] = 1.
+        return one_hot
 
     def load_data(self):
         # Load and preprocess data
@@ -180,6 +199,7 @@ class AmazonClassifier:
         self.Y_train = y_data[:1200000]
         self.X_test = x_data[1200000:]
         self.Y_test = y_data[1200000:]
+        return self.X_train, self.Y_train, self.X_test, self.Y_test
 
     def train(self, training_epochs=20, iterations_per_epoch=500, learning_rate=0.001, batch_size=128, show_cost=True,
               show_test_acc=True, save=False, save_path='done_model/tf_done_model.ckpt', logger=True):
@@ -253,18 +273,20 @@ if __name__ == '__main__':
     super_start_time = time.time()
     save_path = './model_saves/tf_model.ckpt'
     clazzifier = AmazonClassifier()
-    # clazzifier.train(training_epochs=5, iterations_per_epoch=1000, learning_rate=0.0001, batch_size=10,
-    #                  show_cost=False, show_test_acc=False, save=True, save_path=save_path, logger=True)
-    clazzifier.restore_model(restore_path=save_path)
-    clazzifier.load_data()
+    # X_data, Y_data, _, _ = clazzifier.load_data()
+    # clazzifier.generate_pickle_representation(X_data, Y_data)
+    clazzifier.train(training_epochs=20, iterations_per_epoch=500, learning_rate=0.001, batch_size=64,
+                     show_cost=False, show_test_acc=True, save=True, save_path=save_path, logger=True)
+    # clazzifier.restore_model(restore_path=save_path)
+    # clazzifier.load_data()
     start_time = time.time()
     print("Testing")
     test_n_samples = 3000
     print(clazzifier.Y_test[:10])
     print(clazzifier.predict(clazzifier.X_test[:10]))
     res_true = np.array([clazzifier.Y_test[:test_n_samples]])
-    # res_pred = np.zeros(test_n_samples)
     # res_pred.fill(5.)
+    # res_pred = np.zeros(test_n_samples)
     res_pred = np.array(clazzifier.predict(clazzifier.X_test[:test_n_samples]))
     acc = np.sum(res_true == res_pred) / test_n_samples
     print("Acc:", acc)

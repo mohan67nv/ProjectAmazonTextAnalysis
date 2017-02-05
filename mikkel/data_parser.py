@@ -10,6 +10,7 @@ import nltk
 # nltk.download()
 from nltk.corpus import stopwords
 
+STOP_WORDS = set(stopwords.words("english"))
 
 def parse(path):
     g = gzip.open(path, 'rb')
@@ -44,11 +45,9 @@ def generate_pickles(path='D:/amazon_data/reviews_Electronics_5.json.gz'):
 
 
 def get_meaningful_words(text, no_stopwords=True):
-    stops = set(stopwords.words("english"))
-    letters_only = re.sub("[^a-zA-Z]", " ", text)
-    words = letters_only.lower().split()
+    words = re.sub("[^a-zA-Z]", " ", text).lower().split()
     if no_stopwords:
-        return [w for w in words if not w in stops]
+        return [w for w in words if not w in STOP_WORDS]
     else:
         return words
 
@@ -79,8 +78,8 @@ def generate_bag_of_words(reviews, n_top_words=50000, no_stopwords=True, save=Fa
 #     Do not call this before the real test!!!!
 #     """
 #     pass
-#     i = 0
 #     df = {}
+#     i = 0
 #     for d in parse(path):
 #         i += 1
 #         if i > 1400000:

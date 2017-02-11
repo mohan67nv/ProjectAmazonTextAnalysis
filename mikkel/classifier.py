@@ -2,6 +2,10 @@ import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 import time
+import pickle
+import pandas as pd
+from sklearn.metrics import confusion_matrix
+import seaborn as sn
 
 from mikkel import data_parser
 
@@ -26,7 +30,7 @@ class AmazonClassifier:
         self.display_step = display_step
         self.examples_to_show = 10
 
-        self.one_hot_template = data_parser.load_bag_of_words(no_stopwords=False)
+        self.one_hot_template = np.array(pickle.load(open("bag_of_words.pickle", "rb")))
 
         self.graph = tf.Graph()
 
@@ -44,26 +48,43 @@ class AmazonClassifier:
         self.saver = None
 
         # Network Parameters
-        self.n_input = len(self.one_hot_template) + 1  # One-hot of most frequent words + 1 (unknown word)
+        self.n_input = len(self.one_hot_template)  # + 1  # One-hot of most frequent words + 1 (unknown word)
         self.n_output = 5  # 5 stars to classify
-        self.n_hidden_1 = 100  # 1st layer num features
-        self.n_hidden_2 = 100  # 2nd layer num features
+        self.n_hidden_1 = 500  # 1st layer num features
+        self.n_hidden_2 = 500  # 2nd layer num features
 
         self.cost_history = []
         self.test_acc_history = []
 
         self.star_counter = np.zeros(5)
 
-    def predict(self, reviews):
+    def predict(self, reviews, much_ram_needed=True):
         all_results = []
-        for review in reviews:
-            if len(review) > 0:
-                words = data_parser.get_meaningful_words(review)
-                one_hots = self.get_one_hot_from_words(words)
-                results = self.sess.run(self.y_pred, feed_dict={self.X: one_hots, self.keep_prob: 1.0})
-                all_results.append(round(np.mean(np.argmax(results, axis=1)) + 1))
+
+        if much_ram_needed:
+            if len(reviews) > 10000:
+                while len(all_results) < len(reviews):
+                    batch_xs, batch_ys = self.generate_batch(None, reviews, None, index_from=len(all_results),
+                                                             index_to=len(all_results) + min(10000, len(reviews) - len(
+                                                                 all_results)))
+                    results = self.sess.run(self.y_pred, feed_dict={self.X: batch_xs, self.keep_prob: 1.0})
+                    for res in results:
+                        all_results.append(np.argmax(res) + 1)
             else:
-                all_results.append(5.)
+                batch_xs, batch_ys = self.generate_batch(min(10000, len(reviews)), reviews, None)
+                results = self.sess.run(self.y_pred, feed_dict={self.X: batch_xs, self.keep_prob: 1.0})
+                for res in results:
+                    all_results.append(np.argmax(res) + 1)
+        else:
+            for review in reviews:
+                if len(review) > 0:
+                    words = data_parser.get_meaningful_words(review)
+                    one_hots = self.get_one_hot_from_words(words)
+                    results = self.sess.run(self.y_pred, feed_dict={self.X: [one_hots], self.keep_prob: 1.0})
+                    all_results.append(round(np.mean(np.argmax(results, axis=1)) + 1))
+                else:
+                    print("Something went wrong in the prediction...")
+                    all_results.append(5)
         return all_results
 
     def restore_model(self, restore_path='./tf_model.ckpt'):
@@ -97,7 +118,9 @@ class AmazonClassifier:
             layer_1 = tf.nn.dropout(layer_1, self.keep_prob)  # Dropout layer
             layer_2 = tf.nn.tanh(tf.add(tf.matmul(layer_1, weights['h2']), biases['b2']))
             layer_2 = tf.nn.dropout(layer_2, self.keep_prob)  # Dropout layer
-            out = tf.matmul(layer_2, weights['out']) + biases['bout']
+            # out = tf.matmul(layer_2, weights['out']) + biases['bout']
+            out = tf.add(tf.matmul(layer_2, weights['out']), biases['bout'])
+            # sfm = tf.nn.softmax(tf.nn.tanh(out))
 
             # Prediction
             self.y_pred = out
@@ -128,52 +151,48 @@ class AmazonClassifier:
             self.init = tf.global_variables_initializer()
 
             # Launch the graph
-            # config = tf.ConfigProto()
-            # config.gpu_options.allow_growth = True
-            self.sess = tf.Session(graph=self.graph)
+            config = tf.ConfigProto()
+            config.gpu_options.allow_growth = True
+            self.sess = tf.Session(graph=self.graph, config=config)
             self.sess.run(self.init)
 
-    def generate_batch(self, batch_size, X_data, Y_data):
+    def generate_batch(self, batch_size, X_data, Y_data, index_from=None, index_to=None):
         idexes = np.arange(len(X_data))
         X_words = []
         Y_labels = []
-
-        selected_label = np.argmin(self.star_counter)
-        while len(X_words) < batch_size:
-            idx = np.random.choice(idexes, 1, replace=True)
-            label = Y_data[idx][0] - 1  # 0-4, not 1-5 stars
-            while label != selected_label:
-                idx = np.random.choice(idexes, 1, replace=True)
-                label = Y_data[idx][0] - 1  # 0-4, not 1-5 stars
-            self.star_counter[selected_label] += 1
-            review = X_data[idx][0]
+        if index_from is not None and index_to is not None:
+            chosen_indexes = np.arange(index_from, index_to)
+        else:
+            chosen_indexes = np.random.choice(idexes, batch_size)
+        # selected_label = np.argmin(self.star_counter)
+        for idx in np.nditer(chosen_indexes):
+            if Y_data is not None:
+                label = Y_data[idx] - 1.  # 0-4, not 1-5 stars
+                one_hot_label = np.zeros(self.n_output)
+                one_hot_label[int(label)] = 1.
+                Y_labels.append(one_hot_label)
+            # while label != selected_label:
+            #     idx = np.random.choice(idexes, 1, replace=True)
+            #     label = Y_data[idx][0] - 1  # 0-4, not 1-5 stars
+            # self.star_counter[selected_label] += 1
+            review = X_data[idx]
             words = data_parser.get_meaningful_words(review)
-            one_hot_label = np.zeros(self.n_output)
-            one_hot_label[int(label)] = 1.
-            one_hot = np.zeros(self.n_input)
-            for word in words:
-                if word in self.one_hot_template:
-                    idx = self.one_hot_template.index(word)
-                    # if idx < self.n_output - 1:
-                    #     one_hot[idx + 1] = 0.5
-                    one_hot[idx] = 1.
-                else:
-                    one_hot[-1] = 1.
-            X_words.append(one_hot)
-            Y_labels.append(one_hot_label)
-        # TODO maybe return random indexes instead of the first ones
-        return np.array(X_words[:batch_size]), np.array(Y_labels[:batch_size])
+            X_words.append(self.get_one_hot_from_words(words))
+        return np.array(X_words), np.array(Y_labels)
 
     def get_one_hot_from_words(self, words):
-        X_words = []
+        # prev_idx = None
+        one_hot = np.zeros(self.n_input)
         for word in words:
-            one_hot = np.zeros(self.n_input)
             if word in self.one_hot_template:
-                one_hot[self.one_hot_template.index(word)] = 1.
-            else:
-                one_hot[-1] = 1.
-            X_words.append(one_hot)
-        return np.array(X_words)
+                idx = np.where(self.one_hot_template == word)
+                # if prev_idx is not None:
+                #     one_hot[prev_idx] = 1.
+                one_hot[idx] = 1.
+                # prev_idx = idx
+                # else:
+                #     one_hot[-1] = 1.
+        return one_hot
 
     def load_data(self):
         # Load and preprocess data
@@ -184,6 +203,7 @@ class AmazonClassifier:
         self.Y_train = y_data[:1200000]
         self.X_test = x_data[1200000:]
         self.Y_test = y_data[1200000:]
+        return self.X_train, self.Y_train, self.X_test, self.Y_test
 
     def train(self, training_epochs=20, iterations_per_epoch=500, learning_rate=0.001, batch_size=128, show_cost=True,
               show_test_acc=True, save=False, save_path='done_model/tf_done_model.ckpt', logger=True):
@@ -205,7 +225,7 @@ class AmazonClassifier:
                 batch_xs, batch_ys = self.generate_batch(batch_size, self.X_train, self.Y_train)
                 # Run optimization op (backprop) and cost op (to get loss value)
                 _, c = self.sess.run([self.optimizer, self.loss_function],
-                                     feed_dict={self.X: batch_xs, self.Y: batch_ys, self.keep_prob: 1.0})
+                                     feed_dict={self.X: batch_xs, self.Y: batch_ys, self.keep_prob: 1.})
                 if i % 10 == 0:
                     print("Processing batch", i, "cost:", c)
                 if i % self.history_sampling_rate == 0:
@@ -222,6 +242,8 @@ class AmazonClassifier:
                                                                      self.keep_prob: 1.0})
                 print("Epoch:", '%04d' % (epoch + 1), "cost=", "{:.9f}".format(c), "test acc=",
                       "{:.9f}".format(test_error))
+                if save:
+                    self.saver.save(self.sess, save_path)
 
         batch_xs, batch_ys = self.generate_batch(10000, self.X_test, self.Y_test)
         final_acc = self.sess.run(self.accuracy,
@@ -250,25 +272,31 @@ class AmazonClassifier:
 
         return final_acc
 
-
 if __name__ == '__main__':
     super_start_time = time.time()
     save_path = './model_saves/tf_model.ckpt'
-    clazzifier = AmazonClassifier()
-    clazzifier.train(training_epochs=10, iterations_per_epoch=1200, learning_rate=0.0001, batch_size=10,
-                     show_cost=False, show_test_acc=False, save=True, save_path=save_path, logger=True)
-    # clazzifier.restore_model(restore_path=save_path)
+    clazzifier = AmazonClassifier(history_sampling_rate=10)
+    X_data, Y_data, X_test, Y_test = clazzifier.load_data()
+    clazzifier.generate_pickle_representation(X_test, Y_test)
+    # clazzifier.train(training_epochs=10, iterations_per_epoch=500, learning_rate=0.001, batch_size=64,
+    #                  show_cost=False, show_test_acc=True, save=True, save_path=save_path, logger=True)
+    # # clazzifier.restore_model(restore_path=save_path)
     # clazzifier.load_data()
-    start_time = time.time()
-    print("Testing")
-    test_n_samples = 3000
-    print(clazzifier.Y_test[:10])
-    print(clazzifier.predict(clazzifier.X_test[:10]))
-    res_true = np.array([clazzifier.Y_test[:test_n_samples]])
-    # res_pred = np.zeros(test_n_samples)
-    # res_pred.fill(5.)
-    res_pred = np.array(clazzifier.predict(clazzifier.X_test[:test_n_samples]))
-    acc = np.sum(res_true == res_pred) / test_n_samples
-    print("Acc:", acc)
-    print("Prediction time used:", time.time() - start_time)
+    # start_time = time.time()
+    # print("Testing")
+    # test_n_samples = len(clazzifier.Y_test)
+    # print(clazzifier.Y_test[:10])
+    # print(clazzifier.predict(clazzifier.X_test[:10]))
+    # res_true = np.array(clazzifier.Y_test[:test_n_samples])
+    # # res_pred = np.zeros(test_n_samples)
+    # # res_pred.fill(5.)
+    # res_pred = np.array(clazzifier.predict(np.array(clazzifier.X_test[:test_n_samples]), much_ram_needed=True))
+    # acc = np.sum(res_true == res_pred) / test_n_samples
+    # mse = ((res_true - res_pred) ** 2).mean()
+    #
+    # print("Acc:", acc)
+    # print("MSE:", mse)
+    # print("Prediction time used:", time.time() - start_time)
     print("All time used:", time.time() - super_start_time)
+
+    # data_parser.draw_heatmap(res_true, res_pred)

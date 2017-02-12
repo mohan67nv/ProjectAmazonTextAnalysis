@@ -113,7 +113,7 @@ def draw_heatmap(res_true, res_pred):
     sn.heatmap(df_cm, annot=True, fmt='d')
     plt.show()
 
-def generate_index_representation(X_data, Y_data, save_to_pickle=False):
+def generate_index_representation(X_data, Y_data, save_to_pickle=False, max_data=None):
     X_representations = []
     Y_one_hots = []
 
@@ -136,13 +136,13 @@ def generate_index_representation(X_data, Y_data, save_to_pickle=False):
         one_hot_label[int(label)] = 1.
         Y_one_hots.append(one_hot_label)
 
-        if len(X_representations) >= 20000:
+        if max_data is not None and len(X_representations) >= max_data:
             break
     X_representations = np.array(X_representations)
     Y_one_hots = np.array(Y_one_hots)
     if save_to_pickle:
-        pickle.dump(X_representations, open("./test_data_ann_representation.pickle", "wb"))
-        pickle.dump(Y_one_hots, open("./test_labels_one_hots.pickle", "wb"))
+        pickle.dump(X_representations, open("./train_data_ann_representation.pickle", "wb"))
+        pickle.dump(Y_one_hots, open("./train_labels_one_hots.pickle", "wb"))
     return X_representations, Y_one_hots
 
 

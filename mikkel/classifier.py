@@ -277,7 +277,7 @@ if __name__ == '__main__':
     save_path = './model_saves/tf_model.ckpt'
     clazzifier = AmazonClassifier(history_sampling_rate=10)
     X_data, Y_data, X_test, Y_test = clazzifier.load_data()
-    clazzifier.generate_pickle_representation(X_test, Y_test)
+    data_parser.generate_index_representation(X_data, Y_data, save_to_pickle=True, max_data=None)
     # clazzifier.train(training_epochs=10, iterations_per_epoch=500, learning_rate=0.001, batch_size=64,
     #                  show_cost=False, show_test_acc=True, save=True, save_path=save_path, logger=True)
     # # clazzifier.restore_model(restore_path=save_path)

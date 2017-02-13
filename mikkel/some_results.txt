@@ -16,3 +16,7 @@ My ANN (15k iterations, lr=0.001, batch_size=64)
 11.02.17
 Embedded RNN
 20000 - 0.681 - 0.9213
+
+12.02.17
+Embedded RNN with full dataset
+200000 - 0.7021 - 0.76324

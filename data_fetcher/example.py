@@ -47,3 +47,28 @@ start_time = time.time()
 df = get_training_data('D:/amazon_data/reviews_Electronics_5.json.gz')
 
 print("Time :", time.time() - start_time)
+
+
+
+# Fixing names on the dataframe
+def fix_dataframe(df = df):
+    y = df['overall'].values
+    X = df['reviewText']
+    df = pd.DataFrame(np.column_stack((X,y)), columns = ['text', 'review_labels'])
+    return df
+df = fix_dataframe(df)
+
+# Checking class distribution.
+def class_dist(df = df):
+    value_counts = df.groupby('review_labels').count()
+    value_counts['distribution'] = value_counts.text.apply(lambda x: x/value_counts.text.sum())
+    return value_counts
+
+# Class balancing
+def class_balancing(df = df):
+    values = {}
+    for i in range(1,6):
+        values[str(i)] = df[df.review_labels == i].sample(class_dist(df).text.min())
+    balanced_df = pd.concat([values['1'], values['2'], values['3'], values['4'], values['5']], axis = 0)
+    balanced_df = balanced_df.sample(frac=1).reset_index(drop=True)
+    return balanced_df

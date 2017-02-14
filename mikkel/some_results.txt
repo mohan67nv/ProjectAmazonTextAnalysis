@@ -20,3 +20,7 @@ Embedded RNN
 12.02.17
 Embedded RNN with full dataset
 200000 - 0.7021 - 0.76324
+
+14.02.17
+Embedded RNN on balanced dataset 340k samples (0.2 split for test)
+69000 - 0.509469 - 1.20289

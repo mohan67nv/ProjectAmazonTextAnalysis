@@ -2,6 +2,7 @@ import pandas as pd
 import gzip
 
 import time
+import numpy as np
 
 
 def parse(path):
